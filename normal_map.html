@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+
+<hmtl>
+    <head>
+        <script id="vertex-shader" type="x-shader/x-vertex">
+            precision mediump float;
+
+             // General attributes we have set up for our cube
+            attribute vec3 aPosition;
+            attribute vec3 aTangent;
+            attribute vec3 aBitangent;
+            attribute vec2 aUV;
+
+             // 3D matricies
+            uniform mat4 modelViewMatrix;
+            uniform mat4 normalMatrix;
+            uniform mat4 projectionMatrix;
+
+            varying vec2 fragUV;
+
+             // Create out tangent Space vectors we will use in our fragment shader
+            varying vec3 tanSpaceLightPosition;
+            varying vec3 tanSpaceViewPosition;
+            varying vec3 tanSpaceFragPosition;
+
+            void main(void)
+            {
+                 // Set up position like usual
+                gl_Position = projectionMatrix * vec4(aPosition, 1.0);
+
+                 // Start setting up the tangent space (approach 2)
+                tanSpaceFragPosition = vec3(modelViewMatrix * vec4(aPosition, 1.0));
+                vec3 xNormal = cross(aBitangent, aTangent);
+
+                 // Set up our tangent, bitangent, and normal vectors to be inverted
+                vec3 t = normalize(mat3(normalMatrix) * aTangent);
+                vec3 b = normalize(mat3(normalMatrix) * aBitangent);
+                vec3 n = normalize(mat3(normalMatrix) * xNormal);
+
+                 // Use transposition to make our tangent space matrix, as it is way cheaper
+                 // than inverse, but has the same effect due to orthogonality.
+                 // Note: We use this to create the tangent space below, better on GPU than CPU
+                mat3 tbn = mat3( vec3(t.x, b.x, n.x), vec3(t.y, b.y, n.y), vec3(t.z, b.z, n.z));
+
+                 // Make our light positions for regular space and tangent space
+                vec3 light_pos = vec3(1, 2, 0);
+                tanSpaceLightPosition = tbn * light_pos;
+
+                 // Set up the remaining tangent space vectors
+                tanSpaceViewPosition = tbn * vec3(0, 0, 0);
+                tanSpaceFragPosition = tbn * tanSpaceFragPosition;
+
+                 // Set the UVs for our fragment shader to pick up
+                fragUV = aUV;
+            }
+
+
+        </script>
+        <script id="fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+
+         // Textures
+        uniform sampler2D tNormal;
+        uniform sampler2D tDiffuse;
+
+         // Determining if we enable elements or not
+        uniform int showBump;
+        uniform int showTexture;
+
+         // All the fragment shader material that we set up during vertex shader
+        varying vec2 fragUV;
+        varying vec3 tanSpaceLightPosition;
+        varying vec3 tanSpaceViewPosition;
+        varying vec3 tanSpaceFragPosition;
+
+        void main(void)
+        {
+             // Set up our lighting and view
+            vec3 light_dir = normalize(tanSpaceLightPosition - tanSpaceFragPosition);
+            vec3 view_dir = normalize(tanSpaceViewPosition - tanSpaceFragPosition);
+
+             // Set amount of light reflected based on texture
+            vec3 albedo = texture2D(tDiffuse, fragUV).rgb;
+
+             // If there is no texture, just make it red
+            if (showTexture == 0) { albedo = vec3(1, 0, 0); }
+
+             // Create our ambient lighting`
+            vec3 ambient = 0.3 * albedo;
+
+             // Create our default normals for a cube, change if need
+            vec3 norm = vec3(0, 0, 1);
+
+            if (showBump == 1) {
+                 // Bump mapping based on the normal, UV coordinates from the
+                 // normal maps. This is the magic line.
+                norm = normalize(texture2D(tNormal, fragUV).rgb * 2.0 - 1.0);
+
+            }
+             // Create the diffuse light
+            float diffuse = max(dot(light_dir, norm), 0.0);
+
+             // Blit it all to the cube in the color
+            gl_FragColor = vec4(diffuse * albedo + ambient, 1.0);
+        }
+
+        </script>
+        <script type="text/javascript" src="../Common/MV.js"></script>
+        <script type="text/javascript" src="../Common/initShaders.js"></script>
+        <script type="text/javascript" src="../Common/webgl-utils.js"></script>
+        <script type="text/javascript" src="normal_map.js"></script>
+        <script type="text/javascript" src="cube_data.js"></script>
+        <script type="text/javascript" src="utils.js"></script>
+        <style>
+            canvas {
+                width: 98vw;
+                height: 92vh;
+                display: block;
+            }
+      </style>
+    </head>
+
+    <body>
+        <canvas id="gl_canvas" width="768px" height="448px" style="margin-bottom:10px">
+            Your browser doesn't appear to support the <code>&lt;canvas&gt;</code> element.
+        </canvas>
+        <hr />
+        <input type="checkbox" id="showBump" checked>Show bump-mapping
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <input type="checkbox" id="showTexture" checked>Show diffuse texture
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <input type="checkbox" id="showNames" checked>Show named texture<br />
+        </body>
+
+</hmtl>
